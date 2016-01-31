@@ -1,0 +1,86 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "CYPEE"
+date: "January 25, 2016"
+output: html_document
+---
+
+## Introduction
+This assignment aims to quantify the correctness of activities performed by participants. Motions are captured using devices such as Jawbone Up, Nike FuelBand, and Fitbit. The dependent variable or response is the "classe" variable in the training set. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Loading and Cleaning Data
+
+Data is downloaded and loaded to R by 
+```{r, results='hide'}
+# reading training and testing files
+trainfile <- "./data/pml-training.csv"
+testfile <- "./data/pml-testing.csv"
+if (!file.exists(trainfile)){
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                  destfile = trainfile)
+}
+if (!file.exists(testfile)){
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                  destfile = testfile)
+}
+
+training.ori = read.csv(trainfile, na.strings=c("", "NA", "NULL", "#DIV/0!"))
+testing.ori = read.csv(testfile, na.strings=c("", "NA", "NULL", "#DIV/0!"))
+```
+
+
+To clean the data, we first perform a brief study on the data
+```{r, results='hide'}
+dim(training.ori); dim(testing.ori)
+summary(training.ori); summary(testing.ori)
+```
+
+The study shows that some features having large amount of "NA" which can be removed. 
+
+```{r, results='hide'}
+training.cln <- training.ori[ , colSums(is.na(training.ori)) == 0]
+```
+
+We next remove unrelated features and feature with extremely low variance.
+```{r, warning=FALSE, message=FALSE}
+unrelatedFeatures = c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+training.cln <- training.cln[, -which(names(training.cln) %in% unrelatedFeatures)]
+library(caret)
+zeroVar= nearZeroVar(training.cln[sapply(training.cln, is.numeric)], saveMetrics = TRUE)
+training.cln = training.cln[,zeroVar[, 'nzv']==FALSE]
+testing.cln = testing.ori[,names(training.cln[,-53])]
+dim(training.cln); dim(testing.cln)
+```
+The cleanup training and testing data consist of `r nrow(training.cln)` and  `r nrow(testing.cln)` samples, respectively. The total featues in this experiment are  `r ncol(training.cln)-1`.
+
+## Spliting of Training and Prediction Process
+Training data is partitioned such that 75% for training and 25% for testing.
+```{r}
+set.seed(2468)
+inTrain <- createDataPartition(y=training.cln$classe, p=0.75, list=FALSE)
+training <- training.cln[inTrain,]; testing <- training.cln[-inTrain,]
+dim(training);dim(testing)
+```
+We perform model prediction using random forests with 5-fold cross validation
+
+```{r, warning=FALSE, message=FALSE}
+require(randomForest)
+fitControl <- trainControl(method="cv", number=5, allowParallel=T, verbose=T)
+rf_fit <- train(classe~.,data=training, method="rf", trControl=fitControl, verbose=F)
+rf_fit
+```
+We now predict the out of sample accuracy.
+```{r}
+pred_rf <- predict(rf_fit, newdata=testing)
+cm <- confusionMatrix(pred_rf, testing$classe)
+cm
+```
+The prediction accuracy is `r round(cm$overall['Accuracy']*100,digits=2)`% which seems to be a good result.
+
+## Conclusion
+The assignment concluded by predicting the testing data from the website
+
+```{r}
+ans20 <- predict(rf_fit, newdata=testing.cln) # Prediction of the 20 cases provided.
+ans20
+```
